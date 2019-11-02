@@ -95,16 +95,6 @@
     },
     "resources": [
         {
-            "type": "Microsoft.Storage/StorageAccounts",
-            "comments": "Storage account for the VHD files for the VMs",
-            "name": "[parameters('storageAccName')]",
-            "apiVersion": "2015-06-15",
-            "location": "[variables('location')]",
-            "properties": {
-                "accountType": "[variables('storType')]"
-            }
-        },
-        {
             "type": "Microsoft.Compute/availabilitySets",
             "comments": "availability set for creating a HA cluster, run the template multiple times to get multiple DNS servers",
             "name": "[variables('asetName')]",
@@ -152,7 +142,6 @@
             "location": "[variables('location')]",
             "dependsOn": [
                 "[concat('Microsoft.Network/networkInterfaces/', variables('nicName'))]",
-                "[concat('Microsoft.Storage/StorageAccounts/', parameters('storageAccName'))]",
                 "[concat('Microsoft.Compute/availabilitySets/', variables('asetName'))]"
             ],
             "properties": {
@@ -186,12 +175,6 @@
                             "id": "[resourceId('Microsoft.Network/networkInterfaces',variables('nicName'))]"
                         }
                     ]
-                },
-                "diagnosticsProfile": {
-                    "bootDiagnostics": {
-                        "enabled": true,
-                        "storageUri": "[concat('http://',parameters('storageAccName'),'.blob.core.windows.net')]"
-                    }
                 }
             }
         },
