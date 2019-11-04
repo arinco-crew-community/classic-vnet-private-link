@@ -1,25 +1,24 @@
-# Connect a Cloud Service to a Azure SQL DB using Private Link (Preview)
+# Connect a Azure Classic Virtual Machine to a Azure SQL DB using Private Link (Preview)
 
-This blog post details how to use az and azure cli to connect a Classic Cloud Service to an Azure SQL Database instance with a Private Endpoint in an Azure RM VNET.
+This blog post details how to deploy and connect a classic virtual machine in a classic virtual network to an Azure SQL Database instance with a Private Endpoint in an Azure RM VNET.
 
 The architecture is described as per the following diagram:
 
-![architecture](https://github.com/arincoau/architecture.png "architecture")
+![architecture](https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/master/arch_diagram.png "architecture")
 
-[github repo](https://www.google.com) with code, deployment scripts, arm templates, etc.
+[github repo](https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/) with code, deployment scripts, arm templates, etc.
 
 ## Prerequisites
 
-- Azure Classic CLI - [installation instuctions](https://docs.microsoft.com/en-us/cli/azure/install-classic-cli?view=azure-cli-latest)
 - Azure CLI - [installation instructions](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli?view=azure-cli-latest)
 
 ## Before you start
 
-These instructions assumes you are familiar with the azure cli and azure in general. You will need to login and select the same subscription using azure and azure classic cli. Please refer to their respective documentation on how to achieve this. The Azure location that resources will be deployed into in this example is Australia East. You can adjust this to suit your needs.
+These instructions assumes you are familiar with the azure cli and have some general azure knowledge. The Azure location that resources will be deployed into in this example is Australia East, you can adjust this location to suit your needs, but it will need to be the same for all resources.
 
 ## Create Resource Group
 
-First up we need to deploy a resource group which will house all our resources.
+Before we start deploying any resource we need to deploy a resource group which will house all our resources.
 
 ``` sh
 az group create \
@@ -29,20 +28,14 @@ az group create \
 
 ## Deploy Classic VNET
 
-Next we use the azure classic cli to create a classic VNET. 
+The first thing you will need to do is deploy a classic VNET via the Azure portal. This can be done by completing the following steps:
 
-``` sh
-azure network vnet create \
-  --vnet classic-vnet \
-  --address-space 172.20.0.0 \
-  --cidr 16 \
-  --location australiaeast \
-  --subnet-name default \
-  --subnet-cidr 24 \
-  --subnet-start-ip 172.20.1.0
-```
-
-**NOTE**: This will only work if you are a co-administrator of the subscription, if not you will need to perform this manually via the portal. Follow these [instructions](https://docs.microsoft.com/en-us/azure/virtual-network/virtual-networks-create-vnet-classic-pportal) with the following details.
+1. In the Azure portal Navigate to the `cloud-service-private-link` resource group
+1. Click **Add**
+1. Search for **Virtual Network**
+1. Click the **(change to Classic)** link next to **Deploy with Resource Manager**
+1. Click **Create**
+1. Fill the form with the following values:
 
 - **Name**: classic-vnet
 - **Address space**: 172.20.0.0/16
@@ -52,6 +45,8 @@ azure network vnet create \
 - **Resource Group**: cloud-service-private-link
 - **Location**: Australia East
 
+7. Click **Create**
+
 ## Deploy ARM VNET
 
 Now we deploy the ARM VNET.
@@ -59,39 +54,31 @@ Now we deploy the ARM VNET.
 ``` sh
 az network vnet create \
   --resource-group cloud-service-private-link \
-  --name rg-vnet \
+  --name rm-vnet \
   --location australiaeast \
   --address-prefixes 172.21.0.0/16 \
   --subnet-name default \
   --subnet-prefixes 172.21.1.0/24
-  --disable-private-endpoint-network-policies true
 ```
 
 ## Peer ARM VNET to Classic VNET
 
-To peer the ARM VNET to the Classic VNET you will first need to locate the Resource ID of the Classic VNET. You can do this by locating it in the portal (in the properties tab of the classic VNET.) Or you can replace <subscription_id> with you subscription id in the following.
+To peer the ARM VNET to the Classic VNET you will first need to locate the Resource ID of the Classic VNET. You can do this by locating it in the portal (in the properties tab of the classic VNET.)
 
-**Resource ID**: /subscriptions/<subscription_id>/resourceGroups/cloud-service-private-link/providers/Microsoft.ClassicNetwork/virtualNetworks/classic-vnet
+The resource ID will look like this:
+/subscriptions/5ef11cc0-15c0-4f78-a5f8-c8053e813f30/resourceGroups/cloud-service-private-link/providers/Microsoft.ClassicNetwork/virtualNetworks/classic-vnet
 
-To get your subscription id execute:
+To get the resource ID via the azure classic CLI.
 
-``` sh
-az account show \
-  --query id \
-  --output tsv
-```
-
-It should look something like this:
-7d74dc30-64d0-4bb7-94cf-db54d4df18d2
-
-Then to peer your classic vnet to your arm vnet execute the following replacing the value for `--remote-vnet`
+Then to peer your classic vnet to your arm vnet execute the following replacing the value for <remote_vnet_resource_id> with the remote vnet resource id idenitfied above.
 
 ``` sh
 az network vnet peering create \
   --resource-group cloud-service-private-link \
-  --name rg-vnet-classic-vnet-peering \
-  --vnet-name rg-vnet \
-  --remote-vnet /subscriptions/7d74dc30-64d0-4bb7-94cf-db54d4df18d2/resourceGroups/cloud-service-private-link/providers/Microsoft.ClassicNetwork/virtualNetworks/classic-vnet
+  --name rm-vnet-classic-vnet-peering \
+  --vnet-name rm-vnet \
+  --allow-vnet-access \
+  --remote-vnet <remote_vnet_resource_id>
 ```
 
 ## Deploy DNS Forwarder
@@ -116,7 +103,7 @@ az network nic create \
   --resource-group cloud-service-private-link \
   --name dnsproxy-vm-nic-1 \
   --location australiaeast \
-  --vnet-name rg-vnet \
+  --vnet-name rm-vnet \
   --subnet default \
   --private-ip-address 172.21.1.4
 
@@ -124,7 +111,7 @@ az network nic create \
   --resource-group cloud-service-private-link \
   --name dnsproxy-vm-nic-2 \
   --location australiaeast \
-  --vnet-name rg-vnet \
+  --vnet-name rm-vnet \
   --subnet default \
   --private-ip-address 172.21.1.5
 ```
@@ -153,7 +140,7 @@ az vm create \
 
 Now we can install the DNS proxying software. In this instance we will be using Bind9. More information on Bind9 can be found [here](https://wiki.debian.org/Bind9).
 
-To do this we will use a custom script virtual machine extension. The script is available to download [here](https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/301-dns-forwarder/forwarderSetup.sh). We will, however, reference it via it's uri. The script take two arguments. The first argument is the IP address of the server that DNS requests should be forwarded to. In our case this is the Azure DNS IP address 168.63.129.16. The second argument is the CIDR notation of client IP address range that the dns server will accept requests from. In our case this is the IP address range of the classic vnet 172.20.0.0/16.
+To do this we will use a custom script virtual machine extension. The script is available to download [here](https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/master/forwarderSetup.sh). We will, however, reference it via it's uri. The script take two arguments. The first argument is the IP address of the server that DNS requests should be forwarded to. In our case this is the Azure DNS IP address 168.63.129.16. The second argument is the CIDR notation of client IP address range that the dns server will accept requests from. In our case this is the IP address range of the classic vnet 172.20.0.0/16.
 
 ``` sh
 az vm extension set \
@@ -162,7 +149,7 @@ az vm extension set \
   --publisher Microsoft.Azure.Extensions \
   --name CustomScript \
   --version 2.0 \
-  --settings '{"fileUris": ["https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/301-dns-forwarder/forwarderSetup.sh"], "commandToExecute":"sh forwarderSetup.sh 168.63.129.16 172.20.0.0/16"}'
+  --settings '{"fileUris": ["https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/master/forwarderSetup.sh"], "commandToExecute":"sh forwarderSetup.sh 168.63.129.16 172.20.0.0/16"}'
 
 az vm extension set \
   --vm-name dnsproxy-vm-2 \
@@ -170,57 +157,48 @@ az vm extension set \
   --publisher Microsoft.Azure.Extensions \
   --name CustomScript \
   --version 2.0 \
-  --settings '{"fileUris": ["https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/301-dns-forwarder/forwarderSetup.sh"], "commandToExecute":"sh forwarderSetup.sh 168.63.129.16 172.20.0.0/16"}'
+  --settings '{"fileUris": ["https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/master/forwarderSetup.sh"], "commandToExecute":"sh forwarderSetup.sh 168.63.129.16 172.20.0.0/16"}'
 ```
 
 ## Update Classic VNET DNS Server
 
-Now that we have deployed our DNS proxy virtual machines into our rg-vnet we can update the DNS server entries for the classic-vnet. This can be achieved via the portal.
+Now that we have deployed our DNS proxy virtual machines into our rm-vnet we can update the DNS server entries for the classic-vnet. This can be achieved via the portal.
 
-- Navigate to the `cloud-service-private-link` resource group
-- Under settings open the DNS Servers pane
-- Add two entries for each of the DNS servers in the rg-vnet
-  - 172.21.1.4
-  - 172.21.1.5
-- Click Save
+1. In the Azure portal Navigate to the `cloud-service-private-link` resource group
+2. Open the `classic-vnet`
+3. Under settings open the DNS Servers pane
+4. Add two entries for each of the DNS servers in the rm-vnet
 
-## Deploy an Azure SQL Database with Private Link
+- 172.21.1.4
+- 172.21.1.5
 
-First we deploy a SQL server. You should replace the <admin_user> and <admin_password> values in the following command with your own values. Please take note of these values as we will use them later to connect to the database from the cloud service.
+5. Click Save
+
+## Deploy an Azure SQL Database
+
+Now we can deploy the SQL server. You should replace the <admin_user> and <admin_password> values in the following command with your own values. Please take note of these values as we will use them later to connect to the database from the cloud service.
 
 ``` sh
 az sql server create \
   --resource-group cloud-service-private-link \
   --name example-sql-server \
-  --admin-user <admin_user> \
+  --admin-user clancy \
   --admin-password '<admin_password>'
 ```
 
-And now we create a database. In this instance we will use the AdventureWorks example database so that we can validate everything is working with our example cloud service.
+## Deploy Azure Private Link
 
-``` sh
-az sql db create \
-  --resource-group cloud-service-private-link \
-  --server example-sql-server \
-  --name adventure_works \
-  --sample-name AdventureWorksLT \
-  --tier Basic \
-  --capacity 5 \
-  --max-size 104857600 \
-  --collation SQL_Latin1_General_CP1_CI_AS
-```
-
-Before we deploy the private link we need to update the rg-vnet subnet to disable private endpoint network policies. 
+Before we deploy the private link we need to update the rm-vnet default subnet to disable private endpoint network policies.
 
 ``` sh
 az network vnet subnet update \
   --resource-group cloud-service-private-link \
-  --vnet-name rg-vnet \
+  --vnet-name rm-vnet \
   --name default \
   --disable-private-endpoint-network-policies true
 ```
 
-We need to create a private endpoint in out rg-vnet for our Azure SQL Server, but before we do this we need to get the resource ID of the sql server we created earlier.
+We need to create a private endpoint in out rm-vnet for our Azure SQL Server, but before we do this we need to get the resource ID of the sql server we created earlier.
 
 ``` sh
 az sql server show \
@@ -236,9 +214,9 @@ Take note of the output and replace <sql_server_id> in the following command.
 az network private-endpoint create \
     --name example-sql-private-link \
     --resource-group cloud-service-private-link \
-    --vnet-name rg-vnet  \
+    --vnet-name rm-vnet  \
     --subnet default \
-    --private-connection-resource-id "/subscriptions/6de39ed6-398b-446e-944f-b8b5ba08bb58/resourceGroups/cloud-service-private-link/providers/Microsoft.Sql/servers/example-sql-server" \
+    --private-connection-resource-id /subscriptions/9b5fe952-db67-415c-8d69-f9beaa466249/resourceGroups/cloud-service-private-link/providers/Microsoft.Sql/servers/example-sql-server \
     --group-ids sqlServer \
     --connection-name example-sql-private-link-connection
 ```
@@ -257,8 +235,8 @@ And now we link the private DNS zone to our VNET.
 az network private-dns link vnet create \
   --resource-group cloud-service-private-link \
   --zone-name  "privatelink.database.windows.net" \
-  --name rg-vnet-private-dns-link \
-  --virtual-network rg-vnet \
+  --name rm-vnet-private-dns-link \
+  --virtual-network rm-vnet \
   --registration-enabled false
 ```
 
@@ -290,10 +268,72 @@ az network private-dns record-set a create \
   --resource-group cloud-service-private-link
 
 az network private-dns record-set a add-record \
-  --record-set-name myserver \
+  --record-set-name example-sql-server \
   --zone-name privatelink.database.windows.net \
   --resource-group cloud-service-private-link \
   --ipv4-address <private_ip>
 ```
 
-## Deploy Cloud Service
+## Deploy Classic Virtual Machine
+
+We can now deploy the classic virtual machine and test out connectivity to our Azure SQL Database. We will need do this via the Azure portal.
+
+1. In the Azure portal Navigate to the `cloud-service-private-link` resource group
+1. Click **Add**
+1. Search for **Virtual Network**
+1. Click the **(change to Classic)** link next to **Deploy with Resource Manager**
+1. Leave the deault software plan selected
+1. Click **Create**
+1. Enter the following Details:
+
+- **Name**: sqltestserver
+- **Username**: *Enter a username*
+- **Password**: *Enter a password*
+- **Confirm Password**: *Enter a password*
+- **Subscription**: *Name of your subscription*
+- **Resource Grouo**: cloud-service-private-link
+- **Location**: Australia East
+
+8. Click Next
+9. Select a small VM size (I chose DS1_V2)
+10. Change storage type to Standard
+11. Under network select in **Cloud service (domain name)**
+12. Click **Create new**
+13. Enter a **Domain name** for the virtual machine
+14. Click **OK**
+15. Ensure the other network settings match the following:
+
+- **Virtual Network**: classic-vnet
+- **Subnet**: default (172.20.1.0/24)
+- **Private IP address**: Dynamic
+- **Dynamic IP address**: Dynamic
+
+16. Click **Endpoints**
+17. Click **+ Add an endpoint**
+18. Enter the following details:
+
+- **Name**: RDP
+- **Protocol**: TCP
+- **Public Port**: 3389
+- **Private Port**: 3389
+- **Floating IP address**: Disabled
+
+19. Click OK, OK, OK, OK
+20. Wait for the deployment to complete and the virtual machine to be in the *running* state
+
+## Validate connectivity between Classic Virtual Machine and Azure SQL Database
+
+To validate connectivity between the classic virtual machine and the Azure SQL database you will need to RDP into the virtual machine.
+
+1. In the Azure portal Navigate to the `cloud-service-private-link` resource group
+1. Open the Cloud service with the **Domain name** you specified in the steps above.
+1. Open **Roles and Instances**
+1. Select the server with the name given above
+1. Click **Connect** (This will download an RDP file)
+1. Open the RDP file and connect to the virtual machine using the username and password specified when creating the virtual machine
+
+Once you have sucessfully connected to the virtual machine you can try pinging the private DNS of the Azure SQL Private Link. `example-sql-server.privatelink.database.windows.net` it should resolve to `172.21.1.4`.
+
+Download and install SQL Server Management Studio on the virtual machine using this link [https://aka.ms/ssmsfullsetup](https://aka.ms/ssmsfullsetup).
+
+Open SQL Server Management Studio and enter the database server as `example-sql-server.privatelink.database.windows.net` and the username and password you specified for the SQL sever above. You should be able to successfully connect. 
