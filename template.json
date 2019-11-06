@@ -1,0 +1,418 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "location": {
+            "type": "string",
+            "defaultValue": "australiaeast"
+        },
+        "classicVnetName": {
+            "type": "string",
+            "defaultValue": "classic-vnet"
+        },
+        "classicVnetAddressSpaceCidr": {
+            "type": "string",
+            "defaultValue": "172.20.0.0/16"
+        },
+        "classicVnetSubnetName": {
+            "type": "string",
+            "defaultValue": "default"
+        },
+        "classicVnetSubnetCidr": {
+            "type": "string",
+            "defaultValue": "172.20.0.0/24"
+        },
+        "resourceManagerVnetName": {
+            "type": "string",
+            "defaultValue": "rm-vnet"
+        },
+        "resourceManagerVnetAddressSpaceCidr": {
+            "type": "string",
+            "defaultValue": "172.21.0.0/16"
+        },
+        "dnsProxyVnetSubnetName": {
+            "type": "string",
+            "defaultValue": "dns"
+        },
+        "dnsProxyVnetSubnetCidr": {
+            "type": "string",
+            "defaultValue": "172.21.0.0/28"
+        },
+        "dnsProxyName": {
+            "type": "string",
+            "defaultValue": "dnsproxy"
+        },
+        "sqlServerVnetSubnetName": {
+            "type": "string",
+            "defaultValue": "sql"
+        },
+        "sqlServerVnetSubnetCidr": {
+            "type": "string",
+            "defaultValue": "172.21.0.16/28"
+        },
+        "sqlServerName": {
+            "type": "string",
+            "defaultValue": "example-sql-server"
+        },
+        "sqlAdministratorLogin": {
+            "type": "string",
+            "defaultValue": "sqladmin"
+        },
+        "sqlAdministratorLoginPassword": {
+            "type": "string",
+            "defaultValue": "somereallylongandstrongpasswordthatyoushouldchange1!"
+        },
+        "databaseName": {
+            "type": "string",
+            "defaultValue": "db1"
+        },
+        "adminUsername": {
+            "type": "string",
+            "defaultValue": "adminuser"
+        },
+        "adminPassword": {
+            "type": "string",
+            "defaultValue": "somereallylongandstrongpasswordthatyoushouldchange1!"
+        }
+    },
+    "variables": {
+        "dnsProxyAvailabilitySetName": "[concat(parameters('dnsProxyName'), '-availability-set')]",
+        "dnsProxyNic1": "[concat(parameters('dnsProxyName'), '-nic-1')]",
+        "dnsProxyNic2": "[concat(parameters('dnsProxyName'), '-nic-2')]",
+        "dnsProxyVirtualMachineName1": "[concat(parameters('dnsProxyName'), '-vm-1')]",
+        "dnsProxyVirtualMachineName2": "[concat(parameters('dnsProxyName'), '-vm-2')]",
+        "dnsProxyExtensionInstallationCommand": "[concat('sh forwarderSetup.sh 168.63.129.16 ', parameters('classicVnetAddressSpaceCidr'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.ClassicNetwork/virtualNetworks",
+            "apiVersion": "2015-06-01",
+            "name": "[parameters('classicVnetName')]",
+            "location": "[parameters('location')]",
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "[parameters('classicVnetAddressSpaceCidr')]"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "[parameters('classicVnetSubnetName')]",
+                        "addressPrefix": "[parameters('classicVnetSubnetCidr')]"
+                    }
+                ],
+                "dhcpOptions": {
+                    "dnsServers": [
+                        "[reference(resourceId('Microsoft.Network/networkInterfaces', variables('dnsProxyNic1')),'2019-07-01').ipConfigurations[0].properties.privateIPAddress]",
+                        "[reference(resourceId('Microsoft.Network/networkInterfaces', variables('dnsProxyNic2')),'2019-07-01').ipConfigurations[0].properties.privateIPAddress]"
+                    ]
+                }
+            }
+        },
+        {
+            "apiVersion": "2019-09-01",
+            "name": "[parameters('resourceManagerVnetName')]",
+            "type": "Microsoft.Network/virtualNetworks",
+            "location": "[parameters('location')]",
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "[parameters('resourceManagerVnetAddressSpaceCidr')]"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "[parameters('dnsProxyVnetSubnetName')]",
+                        "properties": {
+                            "addressPrefix": "[parameters('dnsProxyVnetSubnetCidr')]"
+                        }
+                    },
+                    {
+                        "name": "[parameters('sqlServerVnetSubnetName')]",
+                        "properties": {
+                            "addressPrefix": "[parameters('sqlServerVnetSubnetCidr')]"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "2019-09-01",
+            "type": "Microsoft.Network/virtualNetworks/virtualNetworkPeerings",
+            "name": "[concat(parameters('resourceManagerVnetName'), '/rm-vnet-classic-vnet-peering')]",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.ClassicNetwork/virtualNetworks/', parameters('classicVnetName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/', parameters('resourceManagerVnetName'))]"
+            ],
+            "properties": {
+                "allowVirtualNetworkAccess": true,
+                "allowForwardedTraffic": false,
+                "allowGatewayTransit": false,
+                "useRemoteGateways": false,
+                "remoteVirtualNetwork": {
+                    "id": "[resourceId('Microsoft.ClassicNetwork/virtualNetworks/', parameters('classicVnetName'))]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Compute/availabilitySets",
+            "name": "[variables('dnsProxyAvailabilitySetName')]",
+            "apiVersion": "2019-07-01",
+            "location": "[parameters('location')]",
+            "properties": {
+                "platformFaultDomainCount": "2",
+                "platformUpdateDomainCount": "2"
+            },
+            "sku": {
+                "name": "Aligned"
+            }
+        },
+        {
+            "name": "[variables('dnsProxyNic1')]",
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2019-07-01",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('resourceManagerVnetName'), parameters('dnsProxyVnetSubnetName'))]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIpAddressVersion": "IPv4",
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('resourceManagerVnetName'), parameters('dnsProxyVnetSubnetName'))]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "name": "[variables('dnsProxyNic2')]",
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2019-07-01",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('resourceManagerVnetName'), parameters('dnsProxyVnetSubnetName'))]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIpAddressVersion": "IPv4",
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('resourceManagerVnetName'), parameters('dnsProxyVnetSubnetName'))]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "2017-12-01",
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[variables('dnsProxyVirtualMachineName1')]",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', variables('dnsProxyNic1'))]",
+                "[resourceId('Microsoft.Compute/availabilitySets', variables('dnsProxyAvailabilitySetName'))]"
+            ],
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "Standard_A1"
+                },
+                "osProfile": {
+                    "computerName": "[variables('dnsProxyVirtualMachineName1')]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "Canonical",
+                        "offer": "UbuntuServer",
+                        "sku": "18.04-LTS",
+                        "version": "latest"
+                    }
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('dnsProxyNic1'))]"
+                        }
+                    ]
+                },
+                "availabilitySet": {
+                    "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('dnsProxyAvailabilitySetName'))]"
+                }
+            }
+        },
+        {
+            "apiVersion": "2017-12-01",
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[variables('dnsProxyVirtualMachineName2')]",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', variables('dnsProxyNic2'))]",
+                "[resourceId('Microsoft.Compute/availabilitySets', variables('dnsProxyAvailabilitySetName'))]"
+            ],
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "Standard_A1"
+                },
+                "osProfile": {
+                    "computerName": "[variables('dnsProxyVirtualMachineName2')]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "Canonical",
+                        "offer": "UbuntuServer",
+                        "sku": "18.04-LTS",
+                        "version": "latest"
+                    }
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('dnsProxyNic2'))]"
+                        }
+                    ]
+                },
+                "availabilitySet": {
+                    "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('dnsProxyAvailabilitySetName'))]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "name": "[concat(variables('dnsProxyVirtualMachineName1'),'/installcustomscript')]",
+            "apiVersion": "2019-07-01",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[concat('Microsoft.Compute/virtualMachines/', variables('dnsProxyVirtualMachineName1'))]"
+            ],
+            "properties": {
+                "publisher": "Microsoft.Azure.Extensions",
+                "type": "CustomScript",
+                "typeHandlerVersion": "2.0",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                    "fileUris": [
+                        "https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/master/forwarderSetup.sh"
+                    ],
+                    "commandToExecute": "[variables('dnsProxyExtensionInstallationCommand')]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "name": "[concat(variables('dnsProxyVirtualMachineName2'),'/installcustomscript')]",
+            "apiVersion": "2019-07-01",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[concat('Microsoft.Compute/virtualMachines/', variables('dnsProxyVirtualMachineName2'))]"
+            ],
+            "properties": {
+                "publisher": "Microsoft.Azure.Extensions",
+                "type": "CustomScript",
+                "typeHandlerVersion": "2.0",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                    "fileUris": [
+                        "https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/master/forwarderSetup.sh"
+                    ],
+                    "commandToExecute": "[variables('dnsProxyExtensionInstallationCommand')]"
+                }
+            }
+        },
+        {
+            "name": "[parameters('sqlServerName')]",
+            "type": "Microsoft.Sql/servers",
+            "location": "[parameters('location')]",
+            "tags": {
+                "displayName": "SqlServer"
+            },
+            "apiVersion": "2014-04-01",
+            "properties": {
+                "administratorLogin": "[parameters('sqlAdministratorLogin')]",
+                "administratorLoginPassword": "[parameters('sqlAdministratorLoginPassword')]",
+                "version": "12.0"
+            }
+        },
+        {
+            "name": "[concat(parameters('sqlServerName'), '/', parameters('databaseName'))]",
+            "type": "Microsoft.Sql/servers/databases",
+            "location": "[parameters('location')]",
+            "tags": {
+                "displayName": "Database"
+            },
+            "apiVersion": "2015-01-01",
+            "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]"
+            ],
+            "properties": {
+                "edition": "Basic",
+                "collation": "SQL_Latin1_General_CP1_CI_AS",
+                "maxSizeBytes": "1073741824",
+                "requestedServiceObjectiveName": "Basic"
+            }
+        },
+        {
+            "name": "[variables('sqlServerPrivateEndpointName')]",
+            "type": "Microsoft.Network/privateEndpoints",
+            "apiVersion": "2019-09-01",
+            "location": "[parameters('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('resourceManagerVnetName'), parameters('sqlServerVnetSubnetName'))]"
+            ],
+            "properties": {
+                "subnet": {
+                    "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('resourceManagerVnetName'), parameters('sqlServerVnetSubnetName'))]"
+                },
+                "privateLinkServiceConnections": [
+                    {
+                        "id": "string",
+                        "properties": {
+                            "privateLinkServiceId": "string",
+                            "groupIds": [
+                                "string"
+                            ],
+                            "requestMessage": "string",
+                            "privateLinkServiceConnectionState": {
+                                "status": "string",
+                                "description": "string",
+                                "actionRequired": "string"
+                            }
+                        },
+                        "name": "string"
+                    }
+                ],
+                "manualPrivateLinkServiceConnections": [
+                    {
+                        "id": "string",
+                        "properties": {
+                            "privateLinkServiceId": "string",
+                            "groupIds": [
+                                "string"
+                            ],
+                            "requestMessage": "string",
+                            "privateLinkServiceConnectionState": {
+                                "status": "string",
+                                "description": "string",
+                                "actionRequired": "string"
+                            }
+                        },
+                        "name": "string"
+                    }
+                ]
+            }
+        }
+    ]
+}

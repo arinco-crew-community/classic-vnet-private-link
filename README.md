@@ -40,7 +40,7 @@ The first thing you will need to do is deploy a classic VNET via the Azure porta
 - **Name**: classic-vnet
 - **Address space**: 172.20.0.0/16
 - **Subnet name**: default
-- **Subnet address range**: 172.20.1.0/24
+- **Subnet address range**: 172.20.0.0/24
 - **Subscription**: *Your subscription name*
 - **Resource Group**: cloud-service-private-link
 - **Location**: Australia East
@@ -58,7 +58,7 @@ az network vnet create \
   --location australiaeast \
   --address-prefixes 172.21.0.0/16 \
   --subnet-name default \
-  --subnet-prefixes 172.21.1.0/24
+  --subnet-prefixes 172.21.0.0/24
 ```
 
 ## Peer ARM VNET to Classic VNET
@@ -103,7 +103,7 @@ az network nic create \
   --location australiaeast \
   --vnet-name rm-vnet \
   --subnet default \
-  --private-ip-address 172.21.1.4
+  --private-ip-address 172.21.0.4
 
 az network nic create \
   --resource-group cloud-service-private-link \
@@ -111,10 +111,10 @@ az network nic create \
   --location australiaeast \
   --vnet-name rm-vnet \
   --subnet default \
-  --private-ip-address 172.21.1.5
+  --private-ip-address 172.21.0.5
 ```
 
-And now we can deploy our virtual machines. 
+And now we can deploy our virtual machines.
 
 ``` sh
 az vm create \
@@ -167,8 +167,8 @@ Now that we have deployed our DNS proxy virtual machines into our rm-vnet we can
 3. Under settings open the DNS Servers pane
 4. Add two entries for each of the DNS servers in the rm-vnet
 
-- 172.21.1.4
-- 172.21.1.5
+- 172.21.0.4
+- 172.21.0.5
 
 5. Click Save
 
@@ -302,7 +302,7 @@ We can now deploy the classic virtual machine and test out connectivity to our A
 15. Ensure the other network settings match the following:
 
 - **Virtual Network**: classic-vnet
-- **Subnet**: default (172.20.1.0/24)
+- **Subnet**: default (172.20.0.0/24)
 - **Private IP address**: Dynamic
 - **Dynamic IP address**: Dynamic
 
@@ -330,7 +330,7 @@ To validate connectivity between the classic virtual machine and the Azure SQL d
 1. Click **Connect** (This will download an RDP file)
 1. Open the RDP file and connect to the virtual machine using the username and password specified when creating the virtual machine
 
-Once you have sucessfully connected to the virtual machine you can try pinging the private DNS of the Azure SQL Private Link. `example-sql-server.privatelink.database.windows.net` it should resolve to `172.21.1.4`.
+Once you have sucessfully connected to the virtual machine you can try pinging the private DNS of the Azure SQL Private Link. `example-sql-server.privatelink.database.windows.net` it should resolve to `172.21.0.4`.
 
 Download and install SQL Server Management Studio on the virtual machine using this link [https://aka.ms/ssmsfullsetup](https://aka.ms/ssmsfullsetup).
 
