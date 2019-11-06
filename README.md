@@ -6,7 +6,7 @@ The architecture is described as per the following diagram:
 
 ![architecture](https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/master/arch_diagram.png "architecture")
 
-[github repo](https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/) with code, deployment scripts, arm templates, etc.
+[github repo](https://www.github.com/arincoau/classic-vnet-private-link/) with code, deployment scripts, arm templates, etc.
 
 ## Prerequisites
 
@@ -14,7 +14,7 @@ The architecture is described as per the following diagram:
 
 ## Before you start
 
-These instructions assumes you are familiar with the azure cli and have some general azure knowledge. The Azure location that resources will be deployed into in this example is Australia East, you can adjust this location to suit your needs, but it will need to be the same for all resources.
+These instructions assumes you are familiar with the Azure CLI and have some general Azure knowledge. The Azure location that resources will be deployed into in this example is Australia East, you can adjust this location to suit your needs, but it will need to be the same for all resources.
 
 ## Create Resource Group
 
@@ -67,8 +67,6 @@ To peer the ARM VNET to the Classic VNET you will first need to locate the Resou
 
 The resource ID will look like this:
 /subscriptions/5ef11cc0-15c0-4f78-a5f8-c8053e813f30/resourceGroups/cloud-service-private-link/providers/Microsoft.ClassicNetwork/virtualNetworks/classic-vnet
-
-To get the resource ID via the azure classic CLI.
 
 Then to peer your classic vnet to your arm vnet execute the following replacing the value for <remote_vnet_resource_id> with the remote vnet resource id idenitfied above.
 
