@@ -6,7 +6,7 @@ The architecture is described as per the following diagram:
 
 ![architecture](https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/master/arch_diagram.png "architecture")
 
-[github repo](https://www.github.com/arincoau/classic-vnet-private-link/) with code, deployment scripts, arm templates, etc.
+If you'd like to skip the instructional part of the blog post you can find the [github repo](https://www.github.com/arincoau/classic-vnet-private-link/) with arm templates to achieve the same result [here](https://www.github.com/arincoau/classic-vnet-private-link/). **NOTE**: You will still have to manually deploy the Azure Classic Virtual Machine.
 
 ## Prerequisites
 
