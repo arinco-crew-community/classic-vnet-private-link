@@ -52,7 +52,7 @@
         },
         "sqlServerName": {
             "type": "string",
-            "defaultValue": "example-sql-server"
+            "defaultValue": "clancy-example-sql-server"
         },
         "sqlAdministratorLogin": {
             "type": "string",
@@ -73,6 +73,18 @@
         "adminPassword": {
             "type": "string",
             "defaultValue": "somereallylongandstrongpasswordthatyoushouldchange1!"
+        },
+        "privateDnsZoneName": {
+            "type": "string",
+            "defaultValue": "privatelink.database.windows.net"
+        },
+        "privateDnsZoneRmVnetLinkName": {
+            "type": "string",
+            "defaultValue": "private-dns-zone-rm-vnet-link"
+        },
+        "uniqueId": {
+            "type": "string",
+            "defaultValue": "[replace(newGuid(), '-', '')]"
         }
     },
     "variables": {
@@ -81,7 +93,8 @@
         "dnsProxyNic2": "[concat(parameters('dnsProxyName'), '-nic-2')]",
         "dnsProxyVirtualMachineName1": "[concat(parameters('dnsProxyName'), '-vm-1')]",
         "dnsProxyVirtualMachineName2": "[concat(parameters('dnsProxyName'), '-vm-2')]",
-        "dnsProxyExtensionInstallationCommand": "[concat('sh forwarderSetup.sh 168.63.129.16 ', parameters('classicVnetAddressSpaceCidr'))]"
+        "dnsProxyExtensionInstallationCommand": "[concat('sh forwarderSetup.sh 168.63.129.16 ', parameters('classicVnetAddressSpaceCidr'))]",
+        "sqlServerPrivateEndpointName": "[concat(parameters('sqlServerName'), '-private-endpoint')]"
     },
     "resources": [
         {
@@ -89,6 +102,10 @@
             "apiVersion": "2015-06-01",
             "name": "[parameters('classicVnetName')]",
             "location": "[parameters('location')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', variables('dnsProxyNic1'))]",
+                "[resourceId('Microsoft.Network/networkInterfaces', variables('dnsProxyNic2'))]"
+            ],
             "properties": {
                 "addressSpace": {
                     "addressPrefixes": [
@@ -130,7 +147,9 @@
                     {
                         "name": "[parameters('sqlServerVnetSubnetName')]",
                         "properties": {
-                            "addressPrefix": "[parameters('sqlServerVnetSubnetCidr')]"
+                            "addressPrefix": "[parameters('sqlServerVnetSubnetCidr')]",
+                            "privateEndpointNetworkPolicies": "Disabled",
+                            "privateLinkServiceNetworkPolicies": "Enabled"
                         }
                     }
                 ]
@@ -174,7 +193,7 @@
             "apiVersion": "2019-07-01",
             "location": "[parameters('location')]",
             "dependsOn": [
-                "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('resourceManagerVnetName'), parameters('dnsProxyVnetSubnetName'))]"
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('resourceManagerVnetName'))]"
             ],
             "properties": {
                 "ipConfigurations": [
@@ -197,7 +216,7 @@
             "apiVersion": "2019-07-01",
             "location": "[parameters('location')]",
             "dependsOn": [
-                "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('resourceManagerVnetName'), parameters('dnsProxyVnetSubnetName'))]"
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('resourceManagerVnetName'))]"
             ],
             "properties": {
                 "ipConfigurations": [
@@ -336,9 +355,6 @@
             "name": "[parameters('sqlServerName')]",
             "type": "Microsoft.Sql/servers",
             "location": "[parameters('location')]",
-            "tags": {
-                "displayName": "SqlServer"
-            },
             "apiVersion": "2014-04-01",
             "properties": {
                 "administratorLogin": "[parameters('sqlAdministratorLogin')]",
@@ -350,9 +366,6 @@
             "name": "[concat(parameters('sqlServerName'), '/', parameters('databaseName'))]",
             "type": "Microsoft.Sql/servers/databases",
             "location": "[parameters('location')]",
-            "tags": {
-                "displayName": "Database"
-            },
             "apiVersion": "2015-01-01",
             "dependsOn": [
                 "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]"
@@ -365,12 +378,34 @@
             }
         },
         {
+            "apiVersion": "2018-09-01",
+            "type": "Microsoft.Network/privateDnsZones",
+            "name": "[parameters('privateDnsZoneName')]",
+            "location": "global"
+        },
+        {
+            "name": "[concat(parameters('privateDnsZoneName'), '/', parameters('privateDnsZoneRmVnetLinkName'))]",
+            "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+            "apiVersion": "2018-09-01",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('resourceManagerVnetName'))]",
+                "[resourceId('Microsoft.Network/privateDnsZones', parameters('privateDnsZoneName'))]"
+            ],
+            "location": "global",
+            "properties": {
+                "virtualNetwork": {
+                    "id": "[resourceId('Microsoft.Network/virtualNetworks', parameters('resourceManagerVnetName'))]"
+                },
+                "registrationEnabled": "false"
+            }
+        },
+        {
             "name": "[variables('sqlServerPrivateEndpointName')]",
             "type": "Microsoft.Network/privateEndpoints",
             "apiVersion": "2019-09-01",
             "location": "[parameters('location')]",
             "dependsOn": [
-                "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('resourceManagerVnetName'), parameters('sqlServerVnetSubnetName'))]"
+                "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]"
             ],
             "properties": {
                 "subnet": {
@@ -378,40 +413,68 @@
                 },
                 "privateLinkServiceConnections": [
                     {
-                        "id": "string",
+                        "name": "[variables('sqlServerPrivateEndpointName')]",
                         "properties": {
-                            "privateLinkServiceId": "string",
+                            "privateLinkServiceId": "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]",
                             "groupIds": [
-                                "string"
-                            ],
-                            "requestMessage": "string",
-                            "privateLinkServiceConnectionState": {
-                                "status": "string",
-                                "description": "string",
-                                "actionRequired": "string"
-                            }
-                        },
-                        "name": "string"
-                    }
-                ],
-                "manualPrivateLinkServiceConnections": [
-                    {
-                        "id": "string",
-                        "properties": {
-                            "privateLinkServiceId": "string",
-                            "groupIds": [
-                                "string"
-                            ],
-                            "requestMessage": "string",
-                            "privateLinkServiceConnectionState": {
-                                "status": "string",
-                                "description": "string",
-                                "actionRequired": "string"
-                            }
-                        },
-                        "name": "string"
+                                "sqlServer"
+                            ]
+                        }
                     }
                 ]
+            }
+        },
+        {
+            "name": "privateDnsZoneRecords",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2017-05-10",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', variables('sqlServerPrivateEndpointName'))]",
+                "[resourceId('Microsoft.Network/privateDnsZones', parameters('privateDnsZoneName'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "resources": [
+                        {
+                            "apiVersion": "2017-05-10",
+                            "name": "[concat('EndpointDnsRecords-', parameters('uniqueId'))]",
+                            "type": "Microsoft.Resources/deployments",
+                            "dependsOn": [
+                            ],
+                            "properties": {
+                                "mode": "Incremental",
+                                "templatelink": {
+                                    "contentVersion": "1.0.0.0",
+                                    "uri": "https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/master/PrivateDnsForPrivateEndpoint.json"
+                                },
+                                "parameters": {
+                                    "privateDnsName": {
+                                        "value": "[parameters('privateDnsZoneName')]"
+                                    },
+                                    "privateEndpointNicResourceId": {
+                                        "value": "[reference(resourceId('Microsoft.Network/privateEndpoints', variables('sqlServerPrivateEndpointName'))).networkInterfaces[0].id]"
+                                    },
+                                    "nicRecordsTemplateUri": {
+                                        "value": "https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/master/PrivateDnsForPrivateEndpointNic.json"
+                                    },
+                                    "ipConfigRecordsTemplateUri": {
+                                        "value": "https://raw.githubusercontent.com/arincoau/classic-vnet-private-link/master/PrivateDnsForPrivateEndpointIpConfig.json"
+                                    },
+                                    "uniqueId": {
+                                        "value": "[parameters('uniqueId')]"
+                                    },
+                                    "existingRecords": {
+                                        "value": {
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
             }
         }
     ]

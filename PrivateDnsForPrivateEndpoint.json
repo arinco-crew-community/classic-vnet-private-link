@@ -1,0 +1,55 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "privateDnsName": {
+            "type": "string"
+        },
+        "privateEndpointNicResourceId": {
+            "type": "string"
+        },
+        "nicRecordsTemplateUri": {
+            "type": "string"
+        },
+        "ipConfigRecordsTemplateUri": {
+            "type": "string"
+        },
+        "uniqueId": {
+            "type": "string"
+        },
+        "existingRecords": {
+            "type": "object"
+        }
+    },
+    "resources": [
+        {
+            "apiVersion": "2017-05-10",
+            "name": "[concat('NicDnsRecords-', parameters('uniqueId'))]",
+            "type": "Microsoft.Resources/deployments",
+            "properties": {
+                "mode": "Incremental",
+                "templatelink": {
+                    "contentVersion": "1.0.0.0",
+                    "uri": "[parameters('nicRecordsTemplateUri')]"
+                },
+                "parameters": {
+                    "privateDnsName": {
+                        "value": "[parameters('privateDnsName')]"
+                    },
+                    "uniqueId": {
+                        "value": "[parameters('uniqueId')]"
+                    },
+                    "ipConfigRecordsTemplateUri": {
+                        "value": "[parameters('ipConfigRecordsTemplateUri')]"
+                    },
+                    "ipConfigurations": {
+                        "value": "[reference(parameters('privateEndpointNicResourceId'), '2019-07-01').ipConfigurations]"
+                    },
+                    "existingRecords": {
+                        "value": "[parameters('existingRecords')]"
+                    }
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,31 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "privateDnsName": {
+            "type": "string"
+        },
+        "ipConfig": {
+            "type": "object"
+        },
+        "existingRecords": {
+            "type": "object"
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Network/privateDnsZones/A",
+            "name": "[concat(parameters('privateDnsName'),'/', split(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns[copyIndex()], '.')[0])]",
+            "location": "global",
+            "apiVersion": "2018-09-01",
+            "properties": {
+                "aRecords": "[concat(if(contains(parameters('existingRecords'), split(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns[copyIndex()], '.')[0]), parameters('existingRecords')[split(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns[copyIndex()], '.')[0]].aRecords, json('[]')), json(concat('[{\"ipv4Address\":\"', parameters('ipConfig').properties.privateIPAddress,'\"}]')))]",
+                "ttl": "[if(contains(parameters('existingRecords'), split(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns[copyIndex()], '.')[0]), parameters('existingRecords')[split(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns[copyIndex()], '.')[0]].ttl, 3600)]"
+            },
+            "copy": {
+                "name": "fqdnCopy",
+                "count": "[length(parameters('ipConfig').properties.privateLinkConnectionProperties.fqdns)]"
+            }
+        }
+    ]
+}
