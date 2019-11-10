@@ -180,7 +180,7 @@ Now we can deploy the SQL server. You should replace the <admin_user> and <admin
 az sql server create \
   --resource-group cloud-service-private-link \
   --name example-sql-server \
-  --admin-user clancy \
+  --admin-user adminuser \
   --admin-password '<admin_password>'
 ```
 
